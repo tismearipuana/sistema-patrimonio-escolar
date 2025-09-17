@@ -1,124 +1,86 @@
-//src/contexts/auth-context.tsx
-'use client'
+'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
-import axios from 'axios'
-
-interface User {
-  id: string
-  name: string
-  email: string
-  role: string
-  tenant: {
-    id: string
-    name: string
-    code: string
-  }
-}
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { api } from '@/lib/api';
+import { User, Role } from '@/types/user'; // Supondo que você tenha um arquivo de tipos
 
 interface AuthContextType {
-  user: User | null
-  loading: boolean
-  login: (token: string, userData: User) => void
-  logout: () => void
-  isAuthenticated: boolean
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>; // <-- CORREÇÃO AQUI
+  logout: () => void;
+  checkPermission: (allowedRoles: Role[]) => boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-  const router = useRouter()
-  const pathname = usePathname()
-
-  const isAuthenticated = !!user
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth()
-  }, [])
-
-  const checkAuth = async () => {
-    try {
-      const token = localStorage.getItem('token')
-      const userData = localStorage.getItem('user')
-
-      if (token && userData) {
-        // Configura o axios para usar o token
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-        
-        // Verifica se o token ainda é válido
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/auth/profile`)
-        
-        if (response.data.user) {
-          setUser(JSON.parse(userData))
-        } else {
-          // Token inválido, remove dados
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
-          delete axios.defaults.headers.common['Authorization']
+    const loadUser = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          api.defaults.headers.Authorization = `Bearer ${token}`;
+          const response = await api.get('/auth/profile');
+          setUser(response.data);
+        } catch (error) {
+          console.error('Failed to load user from token', error);
+          localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
         }
       }
-    } catch (error) {
-      // Token inválido ou erro na verificação
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      delete axios.defaults.headers.common['Authorization']
-      console.error('Erro na verificação de auth:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+      setIsLoading(false);
+    };
+    loadUser();
+  }, []);
 
-  const login = (token: string, userData: User) => {
-    localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(userData))
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    setUser(userData)
-  }
+  const login = async (email: string, password: string) => { // <-- CORREÇÃO AQUI
+    const response = await api.post('/auth/login', { email, password });
+    const { accessToken, refreshToken, user } = response.data;
+    
+    localStorage.setItem('token', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    api.defaults.headers.Authorization = `Bearer ${accessToken}`;
+    
+    setUser(user);
+  };
 
   const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    delete axios.defaults.headers.common['Authorization']
-    setUser(null)
-    router.push('/login')
-  }
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    delete api.defaults.headers.Authorization;
+  };
 
-  // Redirect logic
-  useEffect(() => {
-    if (!loading) {
-      if (!isAuthenticated && pathname !== '/login') {
-        router.push('/login')
-      } else if (isAuthenticated && pathname === '/login') {
-        router.push('/')
-      }
-    }
-  }, [isAuthenticated, loading, pathname, router])
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Carregando...</p>
-        </div>
-      </div>
-    )
-  }
+  const checkPermission = (allowedRoles: Role[]): boolean => {
+    if (!user) return false;
+    return allowedRoles.includes(user.role);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        login,
+        logout,
+        checkPermission,
+      }}
+    >
       {children}
     </AuthContext.Provider>
-  )
-}
+  );
+};
 
-export function useAuth() {
-  const context = useContext(AuthContext)
+export const useAuth = () => {
+  const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    throw new Error('useAuth must be used within an AuthProvider');
   }
-  return context
-}
+  return context;
+};
