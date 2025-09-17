@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Mail, Shield, User, Search, ArrowUpDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, Mail, Shield, User, Search, ArrowUpDown, Lock } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 type Role = 'ADMIN' | 'SUPPORT' | 'USER';
@@ -142,6 +142,18 @@ export default function UsuariosPage() {
 
   const handleRoleChange = (userId: string, newRole: string) => {
     console.log(`Updating role for user ${userId} to ${newRole}`);
+  };
+
+    const formatDetails = (data: any) => {
+    if (!data || !data.details) return 'N/A';
+    
+    // CORREÇÃO AQUI
+    const details = Object.entries(data.details)
+      .filter(([, count]) => (count as number) > 0) 
+      .map(([key, count]) => `${key}: ${count}`)
+      .join('\n');
+      
+    return details || 'Nenhuma atividade recente';
   };
 
 
