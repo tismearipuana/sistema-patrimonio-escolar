@@ -1,3 +1,6 @@
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Ignora erros de ESLint durante o build
@@ -6,12 +9,12 @@ const nextConfig = {
   },
   // Adiciona o alias para o Webpack
   webpack: (config) => {
-    // Garante que o objeto alias exista
-    config.resolve.alias = config.resolve.alias || {};
-    // Adiciona nosso alias
-    config.resolve.alias['@'] = new URL('./src', import.meta.url).pathname;
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname, './src'),
+    };
     return config;
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
