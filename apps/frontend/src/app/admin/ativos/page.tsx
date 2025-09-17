@@ -1180,7 +1180,7 @@ export default function AtivosPage() {
                         if (el && detailsModal.ativo) {
                           el.innerHTML = ''
                           const qrCode = generateQRCode(detailsModal.ativo)
-                          qrCode.setOptions({ width: 200, height: 200 })
+                          qrCode.update({ width: 200, height: 200 })
                           qrCode.append(el)
                         }
                       }}
