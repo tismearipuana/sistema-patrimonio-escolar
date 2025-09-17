@@ -2,13 +2,13 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { User, Role } from '@/types/user'; // Supondo que você tenha um arquivo de tipos
+import { User, Role } from '@/types/user';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>; // <-- CORREÇÃO AQUI
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   checkPermission: (allowedRoles: Role[]) => boolean;
 }
@@ -38,14 +38,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     loadUser();
   }, []);
 
-  const login = async (email: string, password: string) => { // <-- CORREÇÃO AQUI
+  const login = async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
     const { accessToken, refreshToken, user } = response.data;
-    
+
     localStorage.setItem('token', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
     api.defaults.headers.Authorization = `Bearer ${accessToken}`;
-    
+
     setUser(user);
   };
 
