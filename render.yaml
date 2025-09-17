@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: backend
+    env: node
+    rootDir: apps/backend
+    buildCommand: |
+      npm ci
+      npx prisma generate
+      npm run build
+      npx prisma migrate deploy
+    startCommand: npm run start:prod
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://neondb_owner:npg_yNL2iHJjUut5@ep-wandering-bird-acqcs7hb-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+      - key: JWT_SECRET
+        value: sua-chave-super-secreta-aqui-mude-em-producao
+      - key: JWT_EXPIRATION
+        value: 15m
+      - key: JWT_REFRESH_SECRET
+        value: sua-chave-refresh-super-secreta
+      - key: JWT_REFRESH_EXPIRATION
+        value: 7d
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: api/v1
+      - key: FRONTEND_URL
+        value: https://sistema-patrimonio-escolar-frontend-bb18llomi.vercel.app
+      - key: QR_CODE_BASE_URL
+        value: https://sistema-patrimonio-escolar-frontend-bb18llomi.vercel.app/asset
+      - key: MAX_FILE_SIZE
+        value: 10485760
+      - key: UPLOAD_DEST
+        value: ./uploads
