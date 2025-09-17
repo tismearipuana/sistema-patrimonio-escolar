@@ -1,0 +1,333 @@
+// backend/prisma/schema.prisma
+// Schema completo para Sistema de Gestão de Ativos Escolares
+// Com sistema de perfis, baixa de ativos, notificações e chamados
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== USUÁRIOS E AUTENTICAÇÃO =====
+
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String
+  password         String? // Para autenticação local
+  role             UserRole @default(SOLICITANTE)
+  tenantId         String?  @map("tenant_id") // Null para SUPER_ADMIN e ADMIN
+  isActive         Boolean  @default(true)
+  canAcceptTickets Boolean  @default(false) @map("can_accept_tickets") // NOVO CAMPO
+  lastLogin        DateTime? @map("last_login")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id])
+  createdTickets        Ticket[]              @relation("TicketCreatedBy")
+  assignedTickets       Ticket[]              @relation("TicketAssignedTo")
+  disposalRequests      AssetDisposalRequest[] @relation("DisposalRequestedBy")
+  reviewedDisposals     AssetDisposalRequest[] @relation("DisposalReviewedBy")
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+
+  @@map("users")
+}
+
+// ===== ESCOLAS/UNIDADES (MULTI-TENANT) =====
+
+model Tenant {
+  id          String      @id @default(cuid())
+  name        String
+  type        TenantType  @default(ESCOLA)
+  parentId    String?     @map("parent_id")
+  code        String      @unique // Código da escola/unidade
+  address     String?
+  phone       String?
+  email       String?
+  cnpj        String?     // Para identificação oficial
+  director    String?     // Nome do diretor
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  parent              Tenant?                @relation("TenantHierarchy", fields: [parentId], references: [id])
+  children            Tenant[]               @relation("TenantHierarchy")
+  users               User[]
+  assets              Asset[]
+  tickets             Ticket[]
+  disposalRequests    AssetDisposalRequest[]
+
+  @@map("tenants")
+}
+
+// ===== ATIVOS/PATRIMÔNIO =====
+
+model Asset {
+  id                String           @id @default(cuid())
+  code              String           @unique // Código de patrimônio
+  serialNumber      String?          @map("serial_number")
+  name              String
+  description       String?
+  category          String
+  brand             String?
+  model             String?
+  purchaseDate      DateTime?        @map("purchase_date")
+  purchaseValue     Decimal?         @map("purchase_value") @db.Decimal(10,2)
+  currentValue      Decimal?         @map("current_value") @db.Decimal(10,2)
+  status            AssetStatus      @default(ATIVO)
+  condition         AssetCondition?  // Estado do bem
+  imageUrl          String?          @map("image_url") // URL da foto
+  location          String?          // Sala, laboratório, etc.
+  responsible       String?          // Pessoa responsável
+  notes             String?
+  warrantyUntil     DateTime?        @map("warranty_until")
+  lastMaintenance   DateTime?        @map("last_maintenance")
+  
+  // Campos para controle de baixa
+  disposalStatus    DisposalStatus   @default(ATIVO) @map("disposal_status")
+  disposalDate      DateTime?        @map("disposal_date")
+  disposalReason    String?          @map("disposal_reason")
+  disposalValue     Decimal?         @map("disposal_value") @db.Decimal(10,2)
+  
+  tenantId          String           @map("tenant_id")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id])
+  tickets           Ticket[]
+  assetEvents       AssetEvent[]
+  disposalRequests  AssetDisposalRequest[]
+
+  @@map("assets")
+}
+
+// ===== HISTÓRICO DE EVENTOS DOS ATIVOS =====
+
+model AssetEvent {
+  id          String    @id @default(cuid())
+  assetId     String    @map("asset_id")
+  eventType   EventType @map("event_type")
+  description String
+  oldValue    String?   @map("old_value")
+  newValue    String?   @map("new_value")
+  userId      String    @map("user_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  // Relacionamentos
+  asset       Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_events")
+}
+
+// ===== SOLICITAÇÕES DE BAIXA =====
+
+model AssetDisposalRequest {
+  id                    String                    @id @default(cuid())
+  assetId               String                    @map("asset_id")
+  requestedById         String                    @map("requested_by_id")
+  tenantId              String                    @map("tenant_id")
+  
+  // Dados da solicitação
+  reason                DisposalReason
+  description           String
+  occurrenceDate        DateTime                  @map("occurrence_date")
+  photos                Json?                     // Array de URLs das fotos
+  technicalReport       String?                   @map("technical_report") // URL do arquivo
+  estimatedRepairCost   Decimal?                  @map("estimated_repair_cost") @db.Decimal(10,2)
+  
+  // Status e aprovação
+  status                DisposalRequestStatus     @default(PENDENTE)
+  reviewedById          String?                   @map("reviewed_by_id")
+  reviewedAt            DateTime?                 @map("reviewed_at")
+  adminNotes            String?                   @map("admin_notes")
+  approvalDocument      String?                   @map("approval_document") // URL do documento gerado
+  
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  asset                 Asset                     @relation(fields: [assetId], references: [id])
+  requestedBy           User                      @relation("DisposalRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy            User?                     @relation("DisposalReviewedBy", fields: [reviewedById], references: [id])
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id])
+
+  @@map("asset_disposal_requests")
+}
+
+// ===== CHAMADOS DE SUPORTE =====
+
+model Ticket {
+  id            String         @id @default(cuid())
+  title         String
+  description   String
+  status        TicketStatus   @default(ABERTO)
+  priority      TicketPriority @default(MEDIA)
+  category      String
+  assetId       String?        @map("asset_id")
+  createdById   String         @map("created_by_id")
+  assignedToId  String?        @map("assigned_to_id")
+  tenantId      String         @map("tenant_id")
+  attachments   Json?          // Array de URLs de anexos
+  resolution    String?        // Descrição da resolução
+  acceptedAt    DateTime?      @map("accepted_at") // NOVO CAMPO
+  resolvedAt    DateTime?      @map("resolved_at")
+  closedAt      DateTime?      @map("closed_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  asset         Asset?         @relation(fields: [assetId], references: [id])
+  createdBy     User           @relation("TicketCreatedBy", fields: [createdById], references: [id])
+  assignedTo    User?          @relation("TicketAssignedTo", fields: [assignedToId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+
+  @@map("tickets")
+}
+
+// ===== NOTIFICAÇÕES =====
+
+model Notification {
+  id          String             @id @default(cuid())
+  userId      String             @map("user_id")
+  type        NotificationType
+  title       String
+  message     String
+  relatedId   String?            @map("related_id") // ID do item relacionado
+  relatedType String?            @map("related_type") // Tipo do item (ASSET, TICKET, DISPOSAL_REQUEST)
+  isRead      Boolean            @default(false) @map("is_read")
+  readAt      DateTime?          @map("read_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  // Relacionamentos
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ===== LOGS DE AUDITORIA =====
+
+model AuditLog {
+  id           String    @id @default(cuid())
+  userId       String    @map("user_id")
+  action       String    // CREATE_ASSET, UPDATE_ASSET, REQUEST_DISPOSAL, etc.
+  resourceType String    @map("resource_type") // ASSET, USER, DISPOSAL_REQUEST, etc.
+  resourceId   String    @map("resource_id")
+  oldValues    Json?     @map("old_values")
+  newValues    Json?     @map("new_values")
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Relacionamentos
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ===== CONFIGURAÇÕES DO SISTEMA =====
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique // Ex: "institution", "patrimony", "qrcode", etc.
+  value     Json     // Dados JSON da configuração
+  category  String   // GENERAL, PATRIMONY, QRCODE, REPORTS, SECURITY
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("system_configs")
+}
+
+// ===== ENUMS =====
+
+enum UserRole {
+  SUPER_ADMIN    // Acesso total ao sistema
+  ADMIN          // Gestão operacional sem acesso a usuários/config
+  GESTOR_ESCOLAR // Acesso limitado à sua escola
+  SOLICITANTE    // Apenas sistema de chamados
+}
+
+enum TenantType {
+  SECRETARIA     // Secretaria de Educação
+  REGIONAL       // Regional de ensino
+  ESCOLA         // Escola municipal
+}
+
+enum AssetStatus {
+  ATIVO          // Em uso normal
+  INATIVO        // Temporariamente fora de uso
+  MANUTENCAO     // Em manutenção
+  BAIXADO        // Baixado permanentemente
+}
+
+enum AssetCondition {
+  OTIMO          // Ótimo estado
+  BOM            // Bom estado
+  REGULAR        // Estado regular
+  RUIM           // Estado ruim
+}
+
+enum DisposalStatus {
+  ATIVO             // Ativo normal
+  SOLICITADO_BAIXA  // Baixa solicitada, aguardando aprovação
+  BAIXADO           // Baixado efetivamente
+}
+
+enum DisposalReason {
+  QUEBRA           // Equipamento quebrado sem possibilidade de conserto
+  OBSOLESCENCIA    // Equipamento obsoleto/descontinuado
+  PERDA            // Equipamento perdido
+  ROUBO            // Equipamento roubado
+  FIM_VIDA_UTIL    // Fim da vida útil do equipamento
+  OUTROS           // Outros motivos
+}
+
+enum DisposalRequestStatus {
+  PENDENTE         // Aguardando análise
+  EM_ANALISE       // Em análise pelo administrador
+  APROVADA         // Baixa aprovada
+  REJEITADA        // Solicitação rejeitada
+  EFETIVADA        // Baixa efetivada no sistema
+  CANCELADA        // Cancelada pelo solicitante
+}
+
+enum TicketStatus {
+  ABERTO
+  EM_ANDAMENTO
+  AGUARDANDO
+  RESOLVIDO
+  FECHADO
+}
+
+enum TicketPriority {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum EventType {
+  CREATED          // Ativo criado
+  UPDATED          // Ativo atualizado
+  MOVED            // Ativo movido de local
+  MAINTENANCE      // Manutenção realizada
+  STATUS_CHANGED   // Status alterado
+  DISPOSAL_REQUEST // Solicitação de baixa
+  DISPOSED         // Baixa efetivada
+}
+
+enum NotificationType {
+  DISPOSAL_REQUESTED    // Nova solicitação de baixa
+  DISPOSAL_APPROVED     // Baixa aprovada
+  DISPOSAL_REJECTED     // Baixa rejeitada
+  TICKET_ASSIGNED       // Chamado atribuído
+  TICKET_RESOLVED       // Chamado resolvido
+  ASSET_MAINTENANCE     // Manutenção agendada
+  SYSTEM_ALERT          // Alerta do sistema
+}
