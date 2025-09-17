@@ -1,8 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '@/lib/api';
-import { User, Role } from '@/types/user';
+// CORREÇÃO APLICADA AQUI: Mudamos de '@/lib/api' para o caminho relativo
+import { api } from '../lib/api'; 
+import { User, Role } from '../types/user'; // Usando caminho relativo por consistência
 
 interface AuthContextType {
   user: User | null;
@@ -40,13 +41,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
-    const { accessToken, refreshToken, user } = response.data;
-
+    const { accessToken, refreshToken, user: loggedInUser } = response.data;
+    
     localStorage.setItem('token', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
     api.defaults.headers.Authorization = `Bearer ${accessToken}`;
-
-    setUser(user);
+    
+    setUser(loggedInUser);
   };
 
   const logout = () => {
