@@ -30,6 +30,6 @@ services:
       - key: QR_CODE_BASE_URL
         value: "https://sistema-patrimonio-escolar-frontend-bb18llomi.vercel.app/asset"
       - key: MAX_FILE_SIZE
-        value: "10485760"
+        value: "10485760"   # ✅ agora como string
       - key: UPLOAD_DEST
         value: "./uploads"
